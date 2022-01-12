@@ -19,13 +19,14 @@ package raft
 
 import (
 	//	"bytes"
+	"bytes"
 	"math/rand"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	//	"6.824/labgob"
+	"6.824/labgob"
 	"6.824/labrpc"
 )
 
@@ -57,9 +58,9 @@ const (
 	ROLE_FOLLOWER                         = "Follower"
 	ROLE_CANDIDATES                       = "Candidates"
 	electionTimeoutStart    time.Duration = 400 * time.Millisecond
-	electionTimeoutInterval time.Duration = 150 * time.Millisecond
-	heartbeatInterval       time.Duration = 100 * time.Millisecond
-	RIGHTNOW                time.Duration = 5 * time.Millisecond //RIGHTNOW是我的一种实现技巧，通过给heartbeat timer赋予一个极小的时间，就可以实现马上发心跳包了
+	electionTimeoutInterval time.Duration = 150 * time.Millisecond //选举随机时间范围
+	heartbeatInterval       time.Duration = 100 * time.Millisecond //心跳间隔
+	RIGHTNOW                time.Duration = 5 * time.Millisecond   //RIGHTNOW是我的一种实现技巧，通过给heartbeat timer赋予一个极小的时间，就可以实现马上发心跳包了
 )
 
 //
@@ -88,8 +89,8 @@ type Raft struct {
 	matchIndex  []int //每个follower的log同步进度（初始为0）
 
 	//my define value
-	voteCounts   int
-	currentState string
+	voteCounts   int    //投票计数值
+	currentState string //当前的状态
 
 	//选举定时器
 	timer     *time.Timer
@@ -100,7 +101,7 @@ type Raft struct {
 	heartbeatTimerLock sync.Mutex
 
 	applyCh   chan ApplyMsg //应用层的提交队列
-	applyCond *sync.Cond
+	applyCond *sync.Cond    //用来唤醒给应用层提交的协程，在commit更新时唤醒
 }
 type LogEntry struct {
 	Term    int
@@ -259,6 +260,7 @@ func (rf *Raft) handleAppendResults(server int, args *AppendEntriesArgs, reply *
 		rf.currentTerm = reply.Term
 		rf.currentState = ROLE_FOLLOWER
 		rf.votedFor = -1
+		rf.persist()
 		rf.resetTimer()
 		return
 	}
@@ -312,6 +314,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.currentTerm = args.Term
 		rf.currentState = ROLE_FOLLOWER
 		rf.votedFor = args.LeaderId
+		rf.persist()
 	}
 	//日志不匹配，请求leader调低index
 	if args.PrevLogIndex > len(rf.logs) || (args.PrevLogTerm != 0 && args.PrevLogTerm != rf.logs[args.PrevLogIndex-1].Term) {
@@ -335,6 +338,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				toPrintLogs = append(toPrintLogs, theTerm.Term)
 			}
 			DPrintf("[%d]--- Success Receive logs from [%d], current logs %v", rf.me, args.LeaderId, toPrintLogs)
+			rf.persist()
 			if len(args.Entries)+args.PrevLogIndex != len(rf.logs) {
 				DPrintFatal("长度不匹配，断言出错！")
 			}
@@ -350,6 +354,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			toPrintLogs = append(toPrintLogs, theTerm.Term)
 		}
 		DPrintf("[%d]--- Success Receive logs from [%d], current logs %v", rf.me, args.LeaderId, toPrintLogs)
+		rf.persist()
 	}
 
 	//修改commitIndex
@@ -392,6 +397,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.votedFor = -1
 		rf.currentTerm = args.Term
 		reply.Term = rf.currentTerm
+		rf.persist()
 	}
 
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
@@ -400,11 +406,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		}
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
+		rf.persist()
 		rf.resetTimer()
 	}
 }
 
-//选举定时器
+//选举定时器，long running time goroutine
 func (rf *Raft) candidateElectionTicker() {
 	for !rf.killed() {
 		<-rf.timer.C
@@ -424,6 +431,7 @@ func (rf *Raft) timeoutElection() {
 	if rf.currentState != ROLE_LEADER {
 		rf.currentState = ROLE_CANDIDATES
 		rf.currentTerm++
+		rf.persist()
 		DPrintf("[%d]---In %d term try to elect", rf.me, rf.currentTerm)
 		args := RequestVoteArgs{
 			Term:         rf.currentTerm,
@@ -472,6 +480,7 @@ func (rf *Raft) handleVoteResult(currentTerm int, reply RequestVoteReply) {
 		rf.currentState = ROLE_FOLLOWER
 		rf.currentTerm = reply.Term
 		rf.votedFor = -1
+		rf.persist()
 		rf.resetTimer()
 		return
 	}
@@ -541,6 +550,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    rf.currentTerm,
 	}
 	rf.logs = append(rf.logs, LogEntry)
+	rf.persist()
 	index = len(rf.logs)
 	term = rf.currentTerm
 	DPrintf("[%d]---Add Command, logIndex %d currentTerm %d", rf.me, index, term)
@@ -550,45 +560,36 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		toPrintLogs = append(toPrintLogs, theTerm.Term)
 	}
 	DPrintf("[%d]---Leader Current logs %v", rf.me, toPrintLogs)
+	//立即发一个心跳包
+	rf.resetHeartbeatTimer(RIGHTNOW)
 	return index, term, isLeader
 }
 
-//
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-//
+//无需加锁，外部有锁
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.logs)
+	data := w.Bytes()
+	INFO("[%d]---Persisted      currentTerm %d voteFor %d the size of logs %d", rf.me, rf.currentTerm, rf.votedFor, len(rf.logs))
+	rf.persister.SaveRaftState(data)
 }
 
-//
-// restore previously persisted state.
-//
+//每次恢复重启时调用
 func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	if d.Decode(&rf.currentTerm) != nil || d.Decode(&rf.votedFor) != nil || d.Decode(&rf.logs) != nil {
+		DPrintFatal("[%d]---read persist failed!", rf.me)
+	}
 }
 
 //
@@ -610,38 +611,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 
 }
-
-////////////////////////////////////////////////
-//
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-//
-///////////////////////////////////////////////////
 
 //
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -684,7 +653,7 @@ func (rf *Raft) lastLogTerm() int {
 // tester or service expects Raft to send ApplyMsg messages.
 // Make() must return quickly, so it should start goroutines
 // for any long-running work.
-//
+// 初始化
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{}

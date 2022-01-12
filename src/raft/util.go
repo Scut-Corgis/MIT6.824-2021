@@ -3,7 +3,7 @@ package raft
 import "log"
 
 // Debugging
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	log.SetFlags(log.Lmicroseconds)
@@ -19,7 +19,7 @@ func DPrintFatal(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-const info = true
+const info = false
 
 func INFO(format string, a ...interface{}) (n int, err error) {
 	log.SetFlags(log.Lmicroseconds)
