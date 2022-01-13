@@ -1,4 +1,5 @@
-count=100
+count=10
     for i in $(seq $count); do
-        go test -run 2B -race >>out.log
+        go test -run 2B >> out.log -race
         done
+
