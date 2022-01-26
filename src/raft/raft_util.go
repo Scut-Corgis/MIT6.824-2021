@@ -10,6 +10,10 @@ func (rf *Raft) lastLogTerm() int {
 
 //用全局索引获取LogEntry
 func (rf *Raft) getLogWithIndex(globalIndex int) LogEntry {
+	if globalIndex-rf.lastSSPointIndex-1 < 0 {
+		DPrintf("globalIndex:%d  lastSSPointIndex:%d ", globalIndex, rf.lastSSPointIndex)
+		DPrintFatal("[%d] globalIndex:%d  lastSSPointIndex:%d ", rf.me, globalIndex, rf.lastSSPointIndex)
+	}
 	return rf.logs[globalIndex-rf.lastSSPointIndex-1]
 }
 

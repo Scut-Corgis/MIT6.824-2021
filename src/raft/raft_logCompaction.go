@@ -34,10 +34,10 @@ func (rf *Raft) InstallSnapShot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	index := args.LastIncludedIndex
 	tempLogs := make([]LogEntry, 0)
 	for i := index + 1; i <= rf.lastLogIndex(); i++ {
-		tempLogs = append(tempLogs, rf.getLogWithIndex(index))
+		tempLogs = append(tempLogs, rf.getLogWithIndex(i))
 	}
-	rf.lastSSPointIndex = args.LastIncludedIndex
 	rf.lastSSPointTerm = args.LastIncludedTerm
+	rf.lastSSPointIndex = args.LastIncludedIndex
 
 	//交换
 	rf.logs = tempLogs
@@ -53,7 +53,7 @@ func (rf *Raft) InstallSnapShot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		CommandValid:  false,
 		SnapshotValid: true,
 		Snapshot:      args.Data,
-		SnapshotTerm:  rf.lastSSPointIndex,
+		SnapshotTerm:  rf.lastSSPointTerm,
 		SnapshotIndex: rf.lastSSPointIndex,
 	}
 	rf.mu.Unlock()

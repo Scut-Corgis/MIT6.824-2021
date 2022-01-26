@@ -172,7 +172,7 @@ func (rf *Raft) applyGoRoutine() {
 			rf.applyCond.Wait()
 		}
 		rf.lastApplied++
-		msg := ApplyMsg{CommandValid: true, Command: rf.getLogWithIndex(rf.lastApplied).Command, CommandIndex: rf.lastApplied}
+		msg := ApplyMsg{CommandValid: true, Command: rf.getLogWithIndex(rf.lastApplied).Command, CommandIndex: rf.lastApplied, SnapshotValid: false}
 		rf.mu.Unlock()
 		INFO("[%d]---Have committed index %d of logs to UpperFloor", rf.me, rf.lastApplied)
 		rf.applyCh <- msg

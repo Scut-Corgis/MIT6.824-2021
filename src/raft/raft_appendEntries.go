@@ -37,7 +37,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.persist()
 	}
 	//日志不匹配，请求leader调低index
-	if args.PrevLogIndex > rf.lastLogIndex() || (args.PrevLogTerm != 0 && args.PrevLogTerm != rf.getLogTermWithIndex(args.PrevLogIndex)) {
+	if args.PrevLogIndex > rf.lastLogIndex() || args.PrevLogIndex < rf.lastSSPointIndex || (args.PrevLogTerm != 0 && args.PrevLogTerm != rf.getLogTermWithIndex(args.PrevLogIndex)) {
 		//我这个优化过头了，不过测试过没问题，直接从commitIndex发给自己，一次搞定！
 		reply.FollowerCommitedIndex = rf.commitIndex
 		reply.Term = rf.currentTerm
