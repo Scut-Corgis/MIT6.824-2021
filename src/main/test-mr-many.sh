@@ -13,7 +13,9 @@ runs=$1
 chmod +x test-mr.sh
 
 for i in $(seq 1 $runs); do
-    timeout -k 2s 900s ./test-mr.sh &
+    echo "第 ${i} 轮测试" >> 100次lab1测试.log
+    echo "-------------------------------------" >> 100次lab1测试.log
+    timeout -k 2s 900s ./test-mr.sh & 
     pid=$!
     if ! wait $pid; then
         echo '***' FAILED TESTS IN TRIAL $i

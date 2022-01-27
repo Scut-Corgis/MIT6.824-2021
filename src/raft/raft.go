@@ -177,7 +177,7 @@ func (rf *Raft) applyGoRoutine() {
 		INFO("[%d]---Have committed index %d of logs to UpperFloor", rf.me, rf.lastApplied)
 		rf.applyCh <- msg
 	}
-	close(rf.applyCh)
+	//close(rf.applyCh)
 }
 
 //持久化常规数据(无需加锁，外部有锁)

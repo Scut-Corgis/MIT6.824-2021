@@ -1,4 +1,4 @@
-count=20
+count=25
     for i in $(seq 1 ${count})
     do
         echo "第 ${i} 轮测试" >> out.log 
