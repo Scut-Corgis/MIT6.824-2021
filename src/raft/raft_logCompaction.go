@@ -57,8 +57,11 @@ func (rf *Raft) InstallSnapShot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		SnapshotIndex: rf.lastSSPointIndex,
 	}
 	rf.mu.Unlock()
+	// 修复了这个bug，即commitIndex <= index时才会发给上层应用快照,不然只会持久化处理
+	if rf.commitIndex == index {
+		rf.applyCh <- msg
+	}
 
-	rf.applyCh <- msg
 	DPrintf("[%d]---InstallSnapshot from leader [%d], index %d", rf.me, args.LeaderId, rf.lastSSPointIndex)
 }
 
