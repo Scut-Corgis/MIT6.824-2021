@@ -49,7 +49,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//没有冲突分两种情况，比我的长，加上去，没我的长，忽略它，因为可能是老RPC包
 	for i, j := (args.PrevLogIndex - rf.lastSSPointIndex), 0; i < len(rf.logs) && j < len(args.Entries); i, j = i+1, j+1 {
 		//冲突的情况
-		if rf.logs[i] != args.Entries[j] {
+		if rf.logs[i].Term != args.Entries[j].Term {
 			rf.logs = rf.logs[:rf.getGlobalToNowIndex(args.PrevLogIndex)+1]
 			rf.logs = append(rf.logs, args.Entries...)
 
