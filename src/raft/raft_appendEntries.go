@@ -193,7 +193,7 @@ func (rf *Raft) handleAppendResults(server int, args *AppendEntriesArgs, reply *
 		prev := rf.matchIndex[server]
 		rf.matchIndex[server] = Max(rf.matchIndex[server], args.PrevLogIndex+len(args.Entries))
 		now := rf.matchIndex[server]
-		rf.nextIndex[server] = Max(args.PrevLogIndex+len(args.Entries)+1, rf.matchIndex[server])
+		rf.nextIndex[server] = Max(args.PrevLogIndex+len(args.Entries)+1, rf.matchIndex[server]) //Fixme: 括号后一项好像需要+1;现在不报错，但这样可能会多发一条日志
 		INFO("[%d]---Received true from [%d], Now matchIndex = %d, nextIndex = %d---<handleAppendResults> ", rf.me, server, rf.matchIndex[server], rf.nextIndex[server])
 		if prev != now {
 			//判断commit是否可以向前推，排序，取中位数和现在的commitIndex对比
